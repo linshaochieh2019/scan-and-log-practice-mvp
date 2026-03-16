@@ -22,6 +22,9 @@ jobs:
       - name: Install dependencies
         run: npm ci --legacy-peer-deps
 
+      - name: Run tests
+        run: npm test
+
       - name: Run ESLint
         run: npx expo lint
 
