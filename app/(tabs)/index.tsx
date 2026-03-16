@@ -248,6 +248,8 @@ const styles = StyleSheet.create({
     flex: 1,
     borderRadius: 10,
     paddingVertical: 10,
+    minHeight: 64,
+    justifyContent: 'center',
     borderWidth: 1,
     borderColor: '#d0d5dd',
   },
