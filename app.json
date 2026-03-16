@@ -49,7 +49,10 @@
         {
           "cameraPermission": "This app uses the camera to capture photos of scanned items."
         }
-      ]
+      ],
+      "expo-font",
+      "expo-sqlite",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true
