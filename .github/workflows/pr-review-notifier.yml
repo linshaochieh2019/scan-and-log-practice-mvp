@@ -1,0 +1,92 @@
+name: PR Review Notifier
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["Claude Code Review"]
+    types: [completed]
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+      issues: read
+    env:
+      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+
+    steps:
+      - name: Build notification payload
+        id: payload
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const run = context.payload.workflow_run;
+
+            // Manual dispatch or missing workflow_run payload
+            if (!run) {
+              core.info('No workflow_run payload (likely manual dispatch). Skipping.');
+              core.setOutput('should_notify', 'false');
+              return;
+            }
+
+            // Only care about PR-triggered review runs
+            if (run.event !== 'pull_request' || !run.pull_requests || run.pull_requests.length === 0) {
+              core.setOutput('should_notify', 'false');
+              return;
+            }
+
+            const pr = run.pull_requests[0];
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            const { data: issueComments } = await github.rest.issues.listComments({
+              owner,
+              repo,
+              issue_number: pr.number,
+              per_page: 100,
+            });
+
+            const claudeComments = issueComments
+              .filter((c) => c.user?.login?.toLowerCase() === 'claude')
+              .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+            const latestClaude = claudeComments[0];
+            const body = (latestClaude?.body || '').toLowerCase();
+
+            const reviewPassed = run.conclusion === 'success';
+            const saysReady = body.includes('ready to merge');
+            const hasFindings = body.includes('issue') || body.includes('bug') || body.includes('fix this');
+
+            let statusText = 'action needed';
+            if (reviewPassed && saysReady) {
+              statusText = 'merge-ready';
+            } else if (reviewPassed && !hasFindings) {
+              statusText = 'merge-ready';
+            }
+
+            const prUrl = `https://github.com/${owner}/${repo}/pull/${pr.number}`;
+            const reviewUrl = run.html_url;
+            const text =
+              statusText === 'merge-ready'
+                ? `✅ PR #${pr.number} is merge-ready\n${prUrl}\nReview run: ${reviewUrl}`
+                : `⚠️ PR #${pr.number} needs follow-up (review findings)\n${prUrl}\nReview run: ${reviewUrl}`;
+
+            core.setOutput('should_notify', 'true');
+            core.setOutput('text', text);
+
+      - name: Send Discord webhook
+        if: steps.payload.outputs.should_notify == 'true' && env.DISCORD_WEBHOOK_URL != ''
+        env:
+          MESSAGE: ${{ steps.payload.outputs.text }}
+        run: |
+          jq -n --arg content "$MESSAGE" '{content: $content}' \
+            | curl -sS -X POST -H 'Content-Type: application/json' \
+              -d @- "$DISCORD_WEBHOOK_URL" >/dev/null
+
+      - name: Skip notice when webhook secret missing
+        if: steps.payload.outputs.should_notify == 'true' && env.DISCORD_WEBHOOK_URL == ''
+        run: |
+          echo "DISCORD_WEBHOOK_URL secret is missing; no notification sent."

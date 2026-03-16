@@ -1,0 +1,39 @@
+name: Claude Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review, reopened]
+
+jobs:
+  code-review:
+    if: github.event.pull_request.draft == false
+    name: Claude Code Review
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: write
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Claude Code Review
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          track_progress: true
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
+            Review this pull request. Focus on:
+            - Bugs and logic errors
+            - Security vulnerabilities
+            - CLAUDE.md compliance (if any CLAUDE.md files exist in the repo)
+
+            Skip nitpicks, style issues, and things a linter would catch.
+            Use inline comments for specific issues and a top-level summary comment.
