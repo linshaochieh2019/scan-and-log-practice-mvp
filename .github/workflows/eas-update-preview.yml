@@ -1,0 +1,122 @@
+name: EAS Update Preview
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  eas-update-preview:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Setup EAS CLI
+        if: ${{ secrets.EXPO_TOKEN != '' }}
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Publish EAS update for PR
+        if: ${{ secrets.EXPO_TOKEN != '' }}
+        id: publish
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          EXPO_PUBLIC_PREVIEW_BRANCH: pr-${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+
+          eas update \
+            --non-interactive \
+            --auto \
+            --platform all \
+            --branch "$EXPO_PUBLIC_PREVIEW_BRANCH" \
+            --message "PR #$PR_NUMBER preview" > eas-update-output.txt
+
+          {
+            echo "branch=$EXPO_PUBLIC_PREVIEW_BRANCH"
+            echo "output<<EOF"
+            cat eas-update-output.txt
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Comment PR with preview details
+        uses: actions/github-script@v7
+        env:
+          HAS_TOKEN: ${{ secrets.EXPO_TOKEN != '' }}
+          BRANCH_NAME: ${{ steps.publish.outputs.branch }}
+          EAS_OUTPUT: ${{ steps.publish.outputs.output }}
+          PROJECT_ID: 4b307517-1d0f-4664-b174-636b2382ae68
+        with:
+          script: |
+            const marker = '<!-- eas-update-preview -->';
+            const hasToken = process.env.HAS_TOKEN === 'true';
+            const branch = process.env.BRANCH_NAME || `pr-${context.issue.number}`;
+            const output = process.env.EAS_OUTPUT || 'No EAS CLI output captured.';
+            const encodedDeepLink = encodeURIComponent(`exp://u.expo.dev/${process.env.PROJECT_ID}?channel-name=${branch}`);
+            const qrUrl = `https://quickchart.io/qr?text=${encodedDeepLink}&size=240`;
+
+            const body = hasToken
+              ? `${marker}
+            ## 📱 EAS Update Preview
+
+            - Branch: \`${branch}\`
+            - Expo Go deep link: \`exp://u.expo.dev/${process.env.PROJECT_ID}?channel-name=${branch}\`
+            - QR code (Expo Go): ${qrUrl}
+
+            <details>
+            <summary>EAS CLI output</summary>
+
+            \`\`\`
+            ${output}
+            \`\`\`
+            </details>`
+              : `${marker}
+            ## 📱 EAS Update Preview
+
+            Skipped because \`EXPO_TOKEN\` is not configured in repository secrets.
+
+            ### Required secret
+            - \`EXPO_TOKEN\`: create with \`eas token:create\` and add to this repo's Actions secrets.`;
+
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+
+            const comments = await github.rest.issues.listComments({
+              owner,
+              repo,
+              issue_number,
+              per_page: 100,
+            });
+
+            const existing = comments.data.find((comment) => comment.body?.includes(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number,
+                body,
+              });
+            }
