@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { Pressable, StyleSheet } from 'react-native';
 import { CameraView, type BarcodeScanningResult, useCameraPermissions } from 'expo-camera';
 
@@ -8,6 +8,7 @@ export default function TabOneScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const [isScanning, setIsScanning] = useState(false);
   const [barcodeValue, setBarcodeValue] = useState<string | null>(null);
+  const hasScanned = useRef(false);
 
   const handleStartScan = useCallback(async () => {
     if (!permission?.granted) {
@@ -15,16 +16,22 @@ export default function TabOneScreen() {
       if (!result.granted) return;
     }
 
+    hasScanned.current = false;
     setBarcodeValue(null);
     setIsScanning(true);
   }, [permission?.granted, requestPermission]);
 
-  const handleBarcodeScanned = useCallback((result: BarcodeScanningResult) => {
-    if (!isScanning) return;
+  const handleCancelScan = useCallback(() => {
+    setIsScanning(false);
+  }, []);
 
+  const handleBarcodeScanned = useCallback((result: BarcodeScanningResult) => {
+    if (hasScanned.current) return;
+
+    hasScanned.current = true;
     setBarcodeValue(result.data);
     setIsScanning(false);
-  }, [isScanning]);
+  }, []);
 
   const permissionDenied = permission && !permission.granted && permission.canAskAgain === false;
 
@@ -62,6 +69,9 @@ export default function TabOneScreen() {
             onBarcodeScanned={handleBarcodeScanned}
           />
           <Text style={styles.helperText}>Point camera at a barcode</Text>
+          <Pressable style={[styles.button, styles.cancelButton]} onPress={handleCancelScan}>
+            <Text style={styles.buttonText}>Cancel</Text>
+          </Pressable>
         </View>
       )}
     </View>
@@ -97,15 +107,22 @@ const styles = StyleSheet.create({
   },
   button: {
     alignSelf: 'center',
+    minHeight: 64,
+    minWidth: 180,
     backgroundColor: '#0a7ea4',
     borderRadius: 10,
     paddingHorizontal: 18,
     paddingVertical: 12,
+    justifyContent: 'center',
+  },
+  cancelButton: {
+    backgroundColor: '#475467',
   },
   buttonText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+    textAlign: 'center',
   },
   resultLabel: {
     fontWeight: '600',
