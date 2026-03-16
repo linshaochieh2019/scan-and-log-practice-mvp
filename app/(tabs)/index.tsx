@@ -21,6 +21,7 @@ export default function ScanScreen() {
   const [notes, setNotes] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [coords, setCoords] = useState<{ latitude: number; longitude: number } | null>(null);
   const hasScanned = useRef(false);
 
   const handleStartScan = useCallback(async () => {
@@ -35,6 +36,22 @@ export default function ScanScreen() {
     setNotes('');
     setSelectedType('receive');
     setIsScanning(true);
+
+    const locationPermission = await Location.requestForegroundPermissionsAsync();
+    if (locationPermission.granted) {
+      Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced })
+        .then((position) => {
+          setCoords({
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+          });
+        })
+        .catch(() => {
+          setCoords(null);
+        });
+    } else {
+      setCoords(null);
+    }
   }, [permission?.granted, requestPermission]);
 
   const handleCancelScan = useCallback(() => {
@@ -65,25 +82,13 @@ export default function ScanScreen() {
         throw new Error('Please sign in first. No authenticated Supabase user found.');
       }
 
-      let latitude: number | null = null;
-      let longitude: number | null = null;
-
-      const locationPermission = await Location.requestForegroundPermissionsAsync();
-      if (locationPermission.granted) {
-        const position = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Balanced,
-        });
-        latitude = position.coords.latitude;
-        longitude = position.coords.longitude;
-      }
-
       const { error: insertError } = await supabase.from('scan_logs').insert({
         user_id: user.id,
         barcode: barcodeValue,
         scan_type: selectedType,
         status: statusLabelMap[selectedType],
-        latitude,
-        longitude,
+        latitude: coords?.latitude ?? null,
+        longitude: coords?.longitude ?? null,
         notes: notes.trim() || null,
       });
 
@@ -100,7 +105,7 @@ export default function ScanScreen() {
     } finally {
       setIsSaving(false);
     }
-  }, [barcodeValue, notes, selectedType]);
+  }, [barcodeValue, coords, notes, selectedType]);
 
   const permissionDenied = permission && !permission.granted && permission.canAskAgain === false;
 

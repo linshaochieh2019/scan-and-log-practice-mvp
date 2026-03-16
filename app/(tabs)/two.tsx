@@ -11,6 +11,7 @@ export default function HistoryScreen() {
   const [error, setError] = useState<string | null>(null);
 
   const loadLogs = useCallback(async () => {
+    setLoading(true);
     setError(null);
 
     try {
@@ -100,6 +101,8 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 8,
+    minHeight: 64,
+    justifyContent: 'center',
   },
   refreshText: {
     color: '#fff',
