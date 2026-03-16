@@ -8,10 +8,17 @@ import { useColorScheme } from '@/components/useColorScheme';
 import { useClientOnlyValue } from '@/components/useClientOnlyValue';
 
 const codeSymbolName: SFSymbol = Platform.select({
-  ios: 'chevron.left.forwardslash.chevron.right',
+  ios: 'barcode.viewfinder',
   android: 'barcode.viewfinder',
   web: 'barcode.viewfinder',
   default: 'barcode.viewfinder',
+}) as SFSymbol;
+
+const historySymbolName: SFSymbol = Platform.select({
+  ios: 'clock.arrow.trianglehead.counterclockwise.rotate.90',
+  android: 'clock.arrow.trianglehead.counterclockwise.rotate.90',
+  web: 'clock.arrow.trianglehead.counterclockwise.rotate.90',
+  default: 'clock.arrow.trianglehead.counterclockwise.rotate.90',
 }) as SFSymbol;
 
 const infoSymbolName: SFSymbol = Platform.select({
@@ -28,21 +35,13 @@ export default function TabLayout() {
     <Tabs
       screenOptions={{
         tabBarActiveTintColor: Colors[colorScheme].tint,
-        // Disable the static render of the header on web
-        // to prevent a hydration error in React Navigation v6.
         headerShown: useClientOnlyValue(false, true),
       }}>
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Tab One',
-          tabBarIcon: ({ color }) => (
-            <SymbolView
-              name={codeSymbolName}
-              tintColor={color}
-              size={28}
-            />
-          ),
+          title: 'Scan',
+          tabBarIcon: ({ color }) => <SymbolView name={codeSymbolName} tintColor={color} size={28} />,
           headerRight: () => (
             <Link href="/modal" asChild>
               <Pressable style={{ marginRight: 15 }}>
@@ -62,14 +61,8 @@ export default function TabLayout() {
       <Tabs.Screen
         name="two"
         options={{
-          title: 'Tab Two',
-          tabBarIcon: ({ color }) => (
-            <SymbolView
-              name={codeSymbolName}
-              tintColor={color}
-              size={28}
-            />
-          ),
+          title: 'History',
+          tabBarIcon: ({ color }) => <SymbolView name={historySymbolName} tintColor={color} size={28} />,
         }}
       />
     </Tabs>

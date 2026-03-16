@@ -1,13 +1,27 @@
 import { useCallback, useRef, useState } from 'react';
-import { Pressable, StyleSheet } from 'react-native';
+import { Pressable, StyleSheet, TextInput } from 'react-native';
 import { CameraView, type BarcodeScanningResult, useCameraPermissions } from 'expo-camera';
+import * as Location from 'expo-location';
 
 import { Text, View } from '@/components/Themed';
+import { SCAN_TYPES, type ScanType } from '@/lib/scan-log';
+import { supabase } from '@/lib/supabase';
 
-export default function TabOneScreen() {
+const statusLabelMap: Record<ScanType, string> = {
+  receive: 'Receive',
+  dispatch: 'Dispatch',
+  check: 'Check',
+};
+
+export default function ScanScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const [isScanning, setIsScanning] = useState(false);
   const [barcodeValue, setBarcodeValue] = useState<string | null>(null);
+  const [selectedType, setSelectedType] = useState<ScanType>('receive');
+  const [notes, setNotes] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [coords, setCoords] = useState<{ latitude: number; longitude: number } | null>(null);
   const hasScanned = useRef(false);
 
   const handleStartScan = useCallback(async () => {
@@ -18,7 +32,26 @@ export default function TabOneScreen() {
 
     hasScanned.current = false;
     setBarcodeValue(null);
+    setMessage(null);
+    setNotes('');
+    setSelectedType('receive');
     setIsScanning(true);
+
+    const locationPermission = await Location.requestForegroundPermissionsAsync();
+    if (locationPermission.granted) {
+      Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced })
+        .then((position) => {
+          setCoords({
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+          });
+        })
+        .catch(() => {
+          setCoords(null);
+        });
+    } else {
+      setCoords(null);
+    }
   }, [permission?.granted, requestPermission]);
 
   const handleCancelScan = useCallback(() => {
@@ -33,30 +66,102 @@ export default function TabOneScreen() {
     setIsScanning(false);
   }, []);
 
+  const handleSubmitLog = useCallback(async () => {
+    if (!barcodeValue) return;
+
+    setIsSaving(true);
+    setMessage(null);
+
+    try {
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError || !user) {
+        throw new Error('Please sign in first. No authenticated Supabase user found.');
+      }
+
+      const { error: insertError } = await supabase.from('scan_logs').insert({
+        user_id: user.id,
+        barcode: barcodeValue,
+        scan_type: selectedType,
+        status: statusLabelMap[selectedType],
+        latitude: coords?.latitude ?? null,
+        longitude: coords?.longitude ?? null,
+        notes: notes.trim() || null,
+      });
+
+      if (insertError) {
+        throw new Error(insertError.message);
+      }
+
+      setMessage('Saved to Supabase.');
+      setBarcodeValue(null);
+      setNotes('');
+      setSelectedType('receive');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Failed to save scan log.');
+    } finally {
+      setIsSaving(false);
+    }
+  }, [barcodeValue, coords, notes, selectedType]);
+
   const permissionDenied = permission && !permission.granted && permission.canAskAgain === false;
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Hello Scanner</Text>
+      <Text style={styles.title}>Scan + Log</Text>
 
       {!isScanning ? (
         <View style={styles.panel}>
-          <Text style={styles.description}>
-            Tap the button below to scan a barcode and show the value.
-          </Text>
+          <Text style={styles.description}>Scan barcode, set status, add notes, then save to Supabase.</Text>
 
           {permissionDenied ? (
-            <Text style={styles.warning}>
-              Camera access is blocked. Enable camera permission in device settings.
-            </Text>
+            <Text style={styles.warning}>Camera access is blocked. Enable camera permission in device settings.</Text>
           ) : null}
 
           <Pressable style={styles.button} onPress={handleStartScan}>
             <Text style={styles.buttonText}>Tap to Scan</Text>
           </Pressable>
 
-          <Text style={styles.resultLabel}>Scanned Barcode:</Text>
+          <Text style={styles.resultLabel}>Scanned Barcode</Text>
           <Text style={styles.resultValue}>{barcodeValue ?? 'No scan yet'}</Text>
+
+          {barcodeValue ? (
+            <View style={styles.formCard}>
+              <Text style={styles.resultLabel}>Status</Text>
+              <View style={styles.segmentRow}>
+                {SCAN_TYPES.map((type) => {
+                  const active = selectedType === type;
+                  return (
+                    <Pressable
+                      key={type}
+                      style={[styles.segmentButton, active && styles.segmentButtonActive]}
+                      onPress={() => setSelectedType(type)}>
+                      <Text style={[styles.segmentText, active && styles.segmentTextActive]}>{statusLabelMap[type]}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              <Text style={styles.resultLabel}>Notes (optional)</Text>
+              <TextInput
+                value={notes}
+                onChangeText={setNotes}
+                placeholder="Add a quick note"
+                multiline
+                numberOfLines={3}
+                style={styles.notesInput}
+              />
+
+              <Pressable style={[styles.button, isSaving && styles.disabledButton]} onPress={handleSubmitLog} disabled={isSaving}>
+                <Text style={styles.buttonText}>{isSaving ? 'Saving...' : 'Save Log'}</Text>
+              </Pressable>
+            </View>
+          ) : null}
+
+          {message ? <Text style={styles.message}>{message}</Text> : null}
         </View>
       ) : (
         <View style={styles.scannerContainer}>
@@ -129,6 +234,51 @@ const styles = StyleSheet.create({
   },
   resultValue: {
     fontSize: 16,
+  },
+  formCard: {
+    gap: 10,
+    backgroundColor: 'transparent',
+  },
+  segmentRow: {
+    flexDirection: 'row',
+    gap: 8,
+    backgroundColor: 'transparent',
+  },
+  segmentButton: {
+    flex: 1,
+    borderRadius: 10,
+    paddingVertical: 10,
+    minHeight: 64,
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#d0d5dd',
+  },
+  segmentButtonActive: {
+    backgroundColor: '#0a7ea4',
+    borderColor: '#0a7ea4',
+  },
+  segmentText: {
+    textAlign: 'center',
+    fontWeight: '600',
+    color: '#344054',
+  },
+  segmentTextActive: {
+    color: '#fff',
+  },
+  notesInput: {
+    borderWidth: 1,
+    borderColor: '#d0d5dd',
+    borderRadius: 10,
+    padding: 10,
+    minHeight: 84,
+    textAlignVertical: 'top',
+    backgroundColor: '#fff',
+  },
+  disabledButton: {
+    opacity: 0.7,
+  },
+  message: {
+    fontSize: 14,
   },
   scannerContainer: {
     gap: 10,
