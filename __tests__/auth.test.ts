@@ -4,24 +4,24 @@ import { supabase } from '@/lib/supabase';
 jest.mock('@/lib/supabase', () => ({
   supabase: {
     auth: {
-      getUser: jest.fn(),
+      getSession: jest.fn(),
       signInAnonymously: jest.fn(),
     },
   },
 }));
 
 describe('ensureAnonymousSession', () => {
-  const getUserMock = supabase.auth.getUser as jest.Mock;
+  const getSessionMock = supabase.auth.getSession as jest.Mock;
   const signInAnonymouslyMock = supabase.auth.signInAnonymously as jest.Mock;
 
   beforeEach(() => {
-    getUserMock.mockReset();
+    getSessionMock.mockReset();
     signInAnonymouslyMock.mockReset();
   });
 
   it('returns existing user when session already exists', async () => {
     const existingUser = { id: 'user-1' };
-    getUserMock.mockResolvedValue({ data: { user: existingUser }, error: null });
+    getSessionMock.mockResolvedValue({ data: { session: { user: existingUser } }, error: null });
 
     const user = await ensureAnonymousSession();
 
@@ -31,7 +31,7 @@ describe('ensureAnonymousSession', () => {
 
   it('creates anonymous user when no session exists', async () => {
     const anonUser = { id: 'anon-1' };
-    getUserMock.mockResolvedValue({ data: { user: null }, error: null });
+    getSessionMock.mockResolvedValue({ data: { session: null }, error: null });
     signInAnonymouslyMock.mockResolvedValue({ data: { user: anonUser }, error: null });
 
     const user = await ensureAnonymousSession();
@@ -40,19 +40,28 @@ describe('ensureAnonymousSession', () => {
     expect(user).toEqual(anonUser);
   });
 
-  it('throws when getUser fails', async () => {
-    const error = new Error('getUser failed');
-    getUserMock.mockResolvedValue({ data: { user: null }, error });
+  it('throws when getSession fails', async () => {
+    const error = new Error('getSession failed');
+    getSessionMock.mockResolvedValue({ data: { session: null }, error });
 
-    await expect(ensureAnonymousSession()).rejects.toThrow('getUser failed');
+    await expect(ensureAnonymousSession()).rejects.toThrow('getSession failed');
     expect(signInAnonymouslyMock).not.toHaveBeenCalled();
   });
 
   it('throws when anonymous sign-in fails', async () => {
     const error = new Error('signIn failed');
-    getUserMock.mockResolvedValue({ data: { user: null }, error: null });
+    getSessionMock.mockResolvedValue({ data: { session: null }, error: null });
     signInAnonymouslyMock.mockResolvedValue({ data: { user: null }, error });
 
     await expect(ensureAnonymousSession()).rejects.toThrow('signIn failed');
+  });
+
+  it('throws when anonymous sign-in returns no user and no error', async () => {
+    getSessionMock.mockResolvedValue({ data: { session: null }, error: null });
+    signInAnonymouslyMock.mockResolvedValue({ data: { user: null }, error: null });
+
+    await expect(ensureAnonymousSession()).rejects.toThrow(
+      'Anonymous sign-in succeeded but no user was returned.'
+    );
   });
 });

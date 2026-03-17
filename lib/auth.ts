@@ -2,16 +2,16 @@ import { supabase } from '@/lib/supabase';
 
 export async function ensureAnonymousSession() {
   const {
-    data: { user },
-    error: userError,
-  } = await supabase.auth.getUser();
+    data: { session },
+    error: sessionError,
+  } = await supabase.auth.getSession();
 
-  if (userError) {
-    throw userError;
+  if (sessionError) {
+    throw sessionError;
   }
 
-  if (user) {
-    return user;
+  if (session?.user) {
+    return session.user;
   }
 
   const { data, error } = await supabase.auth.signInAnonymously();
