@@ -32,27 +32,28 @@ let syncPromise: Promise<{ syncedCount: number; pendingCount: number }> | null =
 
 async function getDb() {
   if (!dbPromise) {
-    dbPromise = SQLite.openDatabaseAsync('scan_log.db');
+    dbPromise = (async () => {
+      const db = await SQLite.openDatabaseAsync('scan_log.db');
+      await db.execAsync(`
+        CREATE TABLE IF NOT EXISTS local_scan_logs (
+          local_id INTEGER PRIMARY KEY AUTOINCREMENT,
+          remote_id TEXT,
+          barcode TEXT NOT NULL,
+          scan_type TEXT NOT NULL,
+          status TEXT,
+          notes TEXT,
+          latitude REAL,
+          longitude REAL,
+          created_at TEXT NOT NULL,
+          sync_state TEXT NOT NULL DEFAULT 'pending',
+          synced_at TEXT
+        );
+      `);
+      return db;
+    })();
   }
 
-  const db = await dbPromise;
-  await db.execAsync(`
-    CREATE TABLE IF NOT EXISTS local_scan_logs (
-      local_id INTEGER PRIMARY KEY AUTOINCREMENT,
-      remote_id TEXT,
-      barcode TEXT NOT NULL,
-      scan_type TEXT NOT NULL,
-      status TEXT,
-      notes TEXT,
-      latitude REAL,
-      longitude REAL,
-      created_at TEXT NOT NULL,
-      sync_state TEXT NOT NULL DEFAULT 'pending',
-      synced_at TEXT
-    );
-  `);
-
-  return db;
+  return dbPromise;
 }
 
 function mapRowToScanLog(row: LocalScanLogRow): ScanLogItem {
@@ -184,4 +185,9 @@ export function subscribeConnectivitySync(onSynced?: () => void) {
       });
     }
   });
+}
+
+export function _resetOfflineStoreForTests() {
+  dbPromise = null;
+  syncPromise = null;
 }

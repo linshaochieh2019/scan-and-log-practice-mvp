@@ -1,4 +1,4 @@
-import { createLocalLog, listLocalLogs, syncPendingLogs } from '@/lib/offline-scan-log';
+import { _resetOfflineStoreForTests, createLocalLog, listLocalLogs, syncPendingLogs } from '@/lib/offline-scan-log';
 import { supabase } from '@/lib/supabase';
 
 const mockFetch = jest.fn();
@@ -44,6 +44,7 @@ describe('offline scan log', () => {
   let idSeq = 1;
 
   beforeEach(() => {
+    _resetOfflineStoreForTests();
     rows = [];
     idSeq = 1;
 

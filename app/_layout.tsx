@@ -26,7 +26,6 @@ export default function RootLayout() {
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
   });
   const [authReady, setAuthReady] = useState(false);
-  const [authError, setAuthError] = useState<Error | null>(null);
 
   // Expo Router uses Error Boundaries to catch errors in the navigation tree.
   useEffect(() => {
@@ -43,8 +42,11 @@ export default function RootLayout() {
           setAuthReady(true);
         }
       } catch (err) {
+        if (__DEV__) {
+          console.warn('Auth bootstrap failed. Offline mode still available until network/auth is restored.', err);
+        }
         if (active) {
-          setAuthError(err instanceof Error ? err : new Error('Failed to initialize auth session'));
+          setAuthReady(true);
         }
       }
     }
@@ -61,10 +63,6 @@ export default function RootLayout() {
       void SplashScreen.hideAsync();
     }
   }, [authReady, loaded]);
-
-  if (authError) {
-    throw authError;
-  }
 
   if (!loaded || !authReady) {
     return null;
