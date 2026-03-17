@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { Pressable, StyleSheet, TextInput } from 'react-native';
 import { CameraView, type BarcodeScanningResult, useCameraPermissions } from 'expo-camera';
 import * as Location from 'expo-location';
 
 import { Text, View } from '@/components/Themed';
 import { SCAN_TYPES, type ScanType } from '@/lib/scan-log';
-import { createLocalLog, subscribeConnectivitySync, syncPendingLogs } from '@/lib/offline-scan-log';
+import { createLocalLog } from '@/lib/database';
+import { useIsConnected } from '@/lib/network';
+import { syncPendingLogs } from '@/lib/sync';
 
 const statusLabelMap: Record<ScanType, string> = {
   receive: 'Receive',
@@ -23,6 +25,8 @@ export default function ScanScreen() {
   const [message, setMessage] = useState<string | null>(null);
   const [coords, setCoords] = useState<{ latitude: number; longitude: number } | null>(null);
   const hasScanned = useRef(false);
+  const latestSaveRequest = useRef(0);
+  const isConnected = useIsConnected();
 
   const handleStartScan = useCallback(async () => {
     if (!permission?.granted) {
@@ -71,6 +75,8 @@ export default function ScanScreen() {
 
     setIsSaving(true);
     setMessage(null);
+    latestSaveRequest.current += 1;
+    const requestId = latestSaveRequest.current;
 
     try {
       await createLocalLog({
@@ -82,13 +88,13 @@ export default function ScanScreen() {
         notes: notes.trim() || null,
       });
 
-      setMessage('Saved locally. Syncing in background...');
+      setMessage(isConnected ? 'Saved locally. Syncing in background...' : 'Saved locally. Offline now — will sync when connection returns.');
       setBarcodeValue(null);
       setNotes('');
       setSelectedType('receive');
 
       void syncPendingLogs().then(({ syncedCount }) => {
-        if (syncedCount > 0) {
+        if (syncedCount > 0 && latestSaveRequest.current === requestId) {
           setMessage('Saved locally and synced.');
         }
       });
@@ -97,15 +103,7 @@ export default function ScanScreen() {
     } finally {
       setIsSaving(false);
     }
-  }, [barcodeValue, coords, notes, selectedType]);
-
-  useEffect(() => {
-    const unsubscribe = subscribeConnectivitySync(() => {
-      setMessage('Connection restored. Pending logs synced.');
-    });
-
-    return unsubscribe;
-  }, []);
+  }, [barcodeValue, coords, isConnected, notes, selectedType]);
 
   const permissionDenied = permission && !permission.granted && permission.canAskAgain === false;
 
@@ -119,6 +117,10 @@ export default function ScanScreen() {
 
           {permissionDenied ? (
             <Text style={styles.warning}>Camera access is blocked. Enable camera permission in device settings.</Text>
+          ) : null}
+
+          {!isConnected ? (
+            <Text style={styles.warning}>You are offline. Logs save locally and sync when connection is restored.</Text>
           ) : null}
 
           <Pressable style={styles.button} onPress={handleStartScan}>
