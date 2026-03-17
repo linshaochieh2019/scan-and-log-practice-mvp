@@ -2,10 +2,11 @@ import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native
 import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import 'react-native-reanimated';
 
 import { useColorScheme } from '@/components/useColorScheme';
+import { ensureAnonymousSession } from '@/lib/auth';
 
 export {
   // Catch any errors thrown by the Layout component.
@@ -18,12 +19,14 @@ export const unstable_settings = {
 };
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
-SplashScreen.preventAutoHideAsync();
+void SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
   const [loaded, error] = useFonts({
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
   });
+  const [authReady, setAuthReady] = useState(false);
+  const [authError, setAuthError] = useState<Error | null>(null);
 
   // Expo Router uses Error Boundaries to catch errors in the navigation tree.
   useEffect(() => {
@@ -31,12 +34,39 @@ export default function RootLayout() {
   }, [error]);
 
   useEffect(() => {
-    if (loaded) {
-      SplashScreen.hideAsync();
-    }
-  }, [loaded]);
+    let active = true;
 
-  if (!loaded) {
+    async function bootstrapAuth() {
+      try {
+        await ensureAnonymousSession();
+        if (active) {
+          setAuthReady(true);
+        }
+      } catch (err) {
+        if (active) {
+          setAuthError(err instanceof Error ? err : new Error('Failed to initialize auth session'));
+        }
+      }
+    }
+
+    void bootstrapAuth();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (loaded && authReady) {
+      void SplashScreen.hideAsync();
+    }
+  }, [authReady, loaded]);
+
+  if (authError) {
+    throw authError;
+  }
+
+  if (!loaded || !authReady) {
     return null;
   }
 
