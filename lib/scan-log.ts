@@ -1,6 +1,8 @@
 export const SCAN_TYPES = ['receive', 'dispatch', 'check'] as const;
 export type ScanType = (typeof SCAN_TYPES)[number];
 
+export type SyncState = 'pending' | 'synced';
+
 export type ScanLogItem = {
   id: string;
   barcode: string;
@@ -10,4 +12,5 @@ export type ScanLogItem = {
   latitude: number | null;
   longitude: number | null;
   created_at: string;
+  sync_state: SyncState;
 };
