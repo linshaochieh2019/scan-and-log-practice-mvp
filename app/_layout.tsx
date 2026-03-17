@@ -7,6 +7,8 @@ import 'react-native-reanimated';
 
 import { useColorScheme } from '@/components/useColorScheme';
 import { ensureAnonymousSession } from '@/lib/auth';
+import { initDatabase } from '@/lib/database';
+import { startNetworkListener } from '@/lib/network';
 
 export {
   // Catch any errors thrown by the Layout component.
@@ -35,8 +37,11 @@ export default function RootLayout() {
   useEffect(() => {
     let active = true;
 
-    async function bootstrapAuth() {
+    const stopNetworkListener = startNetworkListener();
+
+    async function bootstrapAuthAndOfflineStack() {
       try {
+        await initDatabase();
         await ensureAnonymousSession();
         if (active) {
           setAuthReady(true);
@@ -51,10 +56,11 @@ export default function RootLayout() {
       }
     }
 
-    void bootstrapAuth();
+    void bootstrapAuthAndOfflineStack();
 
     return () => {
       active = false;
+      stopNetworkListener();
     };
   }, []);
 

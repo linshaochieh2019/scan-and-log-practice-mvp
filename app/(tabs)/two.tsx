@@ -1,14 +1,18 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet } from 'react-native';
 
+import { SyncStatusBadge } from '@/components/SyncStatusBadge';
 import { Text, View } from '@/components/Themed';
+import { listLocalLogs } from '@/lib/database';
+import { useIsConnected, subscribeSyncCompleted } from '@/lib/network';
 import { type ScanLogItem } from '@/lib/scan-log';
-import { listLocalLogs, subscribeConnectivitySync, syncPendingLogs } from '@/lib/offline-scan-log';
+import { syncPendingLogs } from '@/lib/sync';
 
 export default function HistoryScreen() {
   const [logs, setLogs] = useState<ScanLogItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const isConnected = useIsConnected();
 
   const loadLogs = useCallback(async () => {
     setLoading(true);
@@ -29,12 +33,22 @@ export default function HistoryScreen() {
   }, [loadLogs]);
 
   useEffect(() => {
-    const unsubscribe = subscribeConnectivitySync(() => {
+    const unsubscribe = subscribeSyncCompleted(() => {
       void loadLogs();
     });
 
     return unsubscribe;
   }, [loadLogs]);
+
+  const stats = useMemo(() => {
+    const today = new Date();
+    const todayDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+    const todayCount = logs.filter((log) => log.created_at.slice(0, 10) === todayDate).length;
+    const pendingCount = logs.filter((log) => log.sync_state === 'pending').length;
+
+    return { todayCount, pendingCount };
+  }, [logs]);
 
   return (
     <View style={styles.container}>
@@ -49,6 +63,12 @@ export default function HistoryScreen() {
         </Pressable>
       </View>
 
+      <View style={styles.statsRow}>
+        <Text style={styles.statText}>Today: {stats.todayCount}</Text>
+        <Text style={styles.statText}>Pending: {stats.pendingCount}</Text>
+        <Text style={[styles.statText, !isConnected && styles.offlineText]}>{isConnected ? 'Online' : 'Offline (sync paused)'}</Text>
+      </View>
+
       {loading ? <Text>Loading scan history...</Text> : null}
       {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
@@ -60,10 +80,7 @@ export default function HistoryScreen() {
             <View key={log.id} style={styles.card}>
               <View style={styles.cardHeader}>
                 <Text style={styles.barcode}>{log.barcode}</Text>
-                <View style={styles.syncBadgeWrap}>
-                  <View style={[styles.syncDot, log.sync_state === 'synced' ? styles.syncDotSynced : styles.syncDotPending]} />
-                  <Text style={styles.syncBadgeText}>{log.sync_state === 'synced' ? 'Synced' : 'Pending'}</Text>
-                </View>
+                <SyncStatusBadge syncState={log.sync_state} />
               </View>
               <Text>Type: {log.scan_type}</Text>
               <Text>Status: {log.status ?? '-'}</Text>
@@ -107,6 +124,21 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: '600',
   },
+  statsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(0,0,0,0.04)',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  statText: {
+    fontWeight: '600',
+    fontSize: 12,
+  },
+  offlineText: {
+    color: '#b54708',
+  },
   errorText: {
     color: '#b42318',
   },
@@ -132,27 +164,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 16,
     flex: 1,
-  },
-  syncBadgeWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'transparent',
-  },
-  syncDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-  },
-  syncDotSynced: {
-    backgroundColor: '#12b76a',
-  },
-  syncDotPending: {
-    backgroundColor: '#f79009',
-  },
-  syncBadgeText: {
-    fontWeight: '600',
-    fontSize: 12,
   },
   time: {
     marginTop: 4,
