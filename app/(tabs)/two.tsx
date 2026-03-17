@@ -3,7 +3,7 @@ import { Pressable, ScrollView, StyleSheet } from 'react-native';
 
 import { Text, View } from '@/components/Themed';
 import { type ScanLogItem } from '@/lib/scan-log';
-import { supabase } from '@/lib/supabase';
+import { listLocalLogs, subscribeConnectivitySync, syncPendingLogs } from '@/lib/offline-scan-log';
 
 export default function HistoryScreen() {
   const [logs, setLogs] = useState<ScanLogItem[]>([]);
@@ -15,27 +15,8 @@ export default function HistoryScreen() {
     setError(null);
 
     try {
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
-
-      if (userError || !user) {
-        throw new Error('Please sign in first. No authenticated Supabase user found.');
-      }
-
-      const { data, error: queryError } = await supabase
-        .from('scan_logs')
-        .select('id, barcode, scan_type, status, notes, latitude, longitude, created_at')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(50);
-
-      if (queryError) {
-        throw new Error(queryError.message);
-      }
-
-      setLogs((data ?? []) as ScanLogItem[]);
+      const data = await listLocalLogs();
+      setLogs(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load history');
     } finally {
@@ -44,14 +25,26 @@ export default function HistoryScreen() {
   }, []);
 
   useEffect(() => {
-    loadLogs();
+    void syncPendingLogs().then(loadLogs);
+  }, [loadLogs]);
+
+  useEffect(() => {
+    const unsubscribe = subscribeConnectivitySync(() => {
+      void loadLogs();
+    });
+
+    return unsubscribe;
   }, [loadLogs]);
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>History</Text>
-        <Pressable style={styles.refreshButton} onPress={loadLogs}>
+        <Pressable
+          style={styles.refreshButton}
+          onPress={() => {
+            void syncPendingLogs().then(loadLogs);
+          }}>
           <Text style={styles.refreshText}>Refresh</Text>
         </Pressable>
       </View>
@@ -65,7 +58,13 @@ export default function HistoryScreen() {
 
           {logs.map((log) => (
             <View key={log.id} style={styles.card}>
-              <Text style={styles.barcode}>{log.barcode}</Text>
+              <View style={styles.cardHeader}>
+                <Text style={styles.barcode}>{log.barcode}</Text>
+                <View style={styles.syncBadgeWrap}>
+                  <View style={[styles.syncDot, log.sync_state === 'synced' ? styles.syncDotSynced : styles.syncDotPending]} />
+                  <Text style={styles.syncBadgeText}>{log.sync_state === 'synced' ? 'Synced' : 'Pending'}</Text>
+                </View>
+              </View>
               <Text>Type: {log.scan_type}</Text>
               <Text>Status: {log.status ?? '-'}</Text>
               <Text>Notes: {log.notes ?? '-'}</Text>
@@ -122,9 +121,38 @@ const styles = StyleSheet.create({
     padding: 12,
     gap: 4,
   },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: 'transparent',
+    gap: 8,
+  },
   barcode: {
     fontWeight: '700',
     fontSize: 16,
+    flex: 1,
+  },
+  syncBadgeWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'transparent',
+  },
+  syncDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  syncDotSynced: {
+    backgroundColor: '#12b76a',
+  },
+  syncDotPending: {
+    backgroundColor: '#f79009',
+  },
+  syncBadgeText: {
+    fontWeight: '600',
+    fontSize: 12,
   },
   time: {
     marginTop: 4,

@@ -1,11 +1,11 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, TextInput } from 'react-native';
 import { CameraView, type BarcodeScanningResult, useCameraPermissions } from 'expo-camera';
 import * as Location from 'expo-location';
 
 import { Text, View } from '@/components/Themed';
 import { SCAN_TYPES, type ScanType } from '@/lib/scan-log';
-import { supabase } from '@/lib/supabase';
+import { createLocalLog, subscribeConnectivitySync, syncPendingLogs } from '@/lib/offline-scan-log';
 
 const statusLabelMap: Record<ScanType, string> = {
   receive: 'Receive',
@@ -73,17 +73,7 @@ export default function ScanScreen() {
     setMessage(null);
 
     try {
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
-
-      if (userError || !user) {
-        throw new Error('Please sign in first. No authenticated Supabase user found.');
-      }
-
-      const { error: insertError } = await supabase.from('scan_logs').insert({
-        user_id: user.id,
+      await createLocalLog({
         barcode: barcodeValue,
         scan_type: selectedType,
         status: statusLabelMap[selectedType],
@@ -92,20 +82,30 @@ export default function ScanScreen() {
         notes: notes.trim() || null,
       });
 
-      if (insertError) {
-        throw new Error(insertError.message);
-      }
-
-      setMessage('Saved to Supabase.');
+      setMessage('Saved locally. Syncing in background...');
       setBarcodeValue(null);
       setNotes('');
       setSelectedType('receive');
+
+      void syncPendingLogs().then(({ syncedCount }) => {
+        if (syncedCount > 0) {
+          setMessage('Saved locally and synced.');
+        }
+      });
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Failed to save scan log.');
     } finally {
       setIsSaving(false);
     }
   }, [barcodeValue, coords, notes, selectedType]);
+
+  useEffect(() => {
+    const unsubscribe = subscribeConnectivitySync(() => {
+      setMessage('Connection restored. Pending logs synced.');
+    });
+
+    return unsubscribe;
+  }, []);
 
   const permissionDenied = permission && !permission.granted && permission.canAskAgain === false;
 
@@ -115,7 +115,7 @@ export default function ScanScreen() {
 
       {!isScanning ? (
         <View style={styles.panel}>
-          <Text style={styles.description}>Scan barcode, set status, add notes, then save to Supabase.</Text>
+          <Text style={styles.description}>Scan barcode, save locally first, then auto-sync to Supabase.</Text>
 
           {permissionDenied ? (
             <Text style={styles.warning}>Camera access is blocked. Enable camera permission in device settings.</Text>
