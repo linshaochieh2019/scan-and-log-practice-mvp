@@ -25,6 +25,7 @@ export default function ScanScreen() {
   const [message, setMessage] = useState<string | null>(null);
   const [coords, setCoords] = useState<{ latitude: number; longitude: number } | null>(null);
   const hasScanned = useRef(false);
+  const latestSaveRequest = useRef(0);
   const isConnected = useIsConnected();
 
   const handleStartScan = useCallback(async () => {
@@ -74,6 +75,8 @@ export default function ScanScreen() {
 
     setIsSaving(true);
     setMessage(null);
+    latestSaveRequest.current += 1;
+    const requestId = latestSaveRequest.current;
 
     try {
       await createLocalLog({
@@ -91,7 +94,7 @@ export default function ScanScreen() {
       setSelectedType('receive');
 
       void syncPendingLogs().then(({ syncedCount }) => {
-        if (syncedCount > 0) {
+        if (syncedCount > 0 && latestSaveRequest.current === requestId) {
           setMessage('Saved locally and synced.');
         }
       });

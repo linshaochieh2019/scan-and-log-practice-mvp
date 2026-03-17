@@ -41,10 +41,15 @@ export default function HistoryScreen() {
   }, [loadLogs]);
 
   const stats = useMemo(() => {
-    const today = new Date();
-    const todayDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-
-    const todayCount = logs.filter((log) => log.created_at.slice(0, 10) === todayDate).length;
+    const now = new Date();
+    const todayCount = logs.filter((log) => {
+      const createdAt = new Date(log.created_at);
+      return (
+        createdAt.getFullYear() === now.getFullYear() &&
+        createdAt.getMonth() === now.getMonth() &&
+        createdAt.getDate() === now.getDate()
+      );
+    }).length;
     const pendingCount = logs.filter((log) => log.sync_state === 'pending').length;
 
     return { todayCount, pendingCount };

@@ -92,8 +92,11 @@ export async function listPendingRows() {
 }
 
 export async function countPendingRows() {
-  const pendingRows = await listPendingRows();
-  return pendingRows.length;
+  const db = await initDatabase();
+  const result = await db.getFirstAsync<{ count: number }>(
+    `SELECT COUNT(*) as count FROM local_scan_logs WHERE sync_state = 'pending';`
+  );
+  return result?.count ?? 0;
 }
 
 export async function markRowSynced(localId: number, remoteId: string) {

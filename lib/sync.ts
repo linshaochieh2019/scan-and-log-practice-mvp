@@ -40,6 +40,7 @@ export async function syncPendingLogs() {
           notes: row.notes,
           latitude: row.latitude,
           longitude: row.longitude,
+          created_at: row.created_at,
         })
         .select('id')
         .single();
